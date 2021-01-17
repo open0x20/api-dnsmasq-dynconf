@@ -11,8 +11,6 @@ pipeline {
                 sh 'cargo test'
             }
         }
-    }
-    stages {
         stage('Build') {
             steps {
                 echo 'Building...'
