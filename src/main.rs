@@ -122,7 +122,7 @@ fn handle_connection(mut stream: TcpStream) {
  * Connection: keep-alive
  * Upgrade-Insecure-Requests: 1
  * 
- * assert_eq!(input, vec!["list", "test.myhost.de", "127.0.0.1", "ABCDEF"]);
+ * assert_eq!(parse_request(input), Ok(vec!["list", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
  */
 fn parse_request(request : &str) -> Result<Vec<&str>, i32> {
     // TODO static regex
@@ -163,16 +163,16 @@ fn parse_address_string(address: &str) -> Vec<&str> {
 
 /* Creates a json representation of an address list.
  *
- * let adr1 = "address=/test1/127.0.0.1"
- * let adr2 = "address=/test2/127.0.0.1"
+ * let adr1 = "address=/test1/127.0.0.1";
+ * let adr2 = "address=/test2/127.0.0.1";
  * let list_of_addrs = vec![
  *   parse_address_string(adr1),
  *   parse_address_string(adr2),
  * ];
  *
  * assert_eq!(
- *   "{\"addresses\": [{\"address\":\"test1\",\"ip\":\"127.0.0.1\"},{\"address\":\"test2\",\"ip\":\"127.0.0.1\"}]}",
  *   parse_address_vector_into_json_string(list_of_addrs)
+ *   "{\"addresses\":[{\"address\":\"test1\",\"ip\":\"127.0.0.1\"},{\"address\":\"test2\",\"ip\":\"127.0.0.1\"},]}"
  * );
  */
 fn parse_address_vector_into_json_string(addresses: Vec<Vec<&str>>) -> String {
@@ -202,8 +202,8 @@ fn parse_address_vector_into_json_string(addresses: Vec<Vec<&str>>) -> String {
  * ];
  *
  * assert_eq!(
- *   "address=/test1/127.0.0.1\naddress=/test2/127.0.0.1",
- *   parse_address_vector_into_address_string(list_of_addrs)
+     parse_address_vector_into_address_string(list_of_addrs),
+ *   "address=/test1/127.0.0.1\naddress=/test2/127.0.0.1\n"
  * );
  */
 fn parse_address_vector_into_address_string(addresses: Vec<Vec<&str>>) -> String {
@@ -222,4 +222,79 @@ fn parse_address_vector_into_address_string(addresses: Vec<Vec<&str>>) -> String
 fn write_to_custom_file(content: String) {
     let mut custom_file_write = File::create("/etc/dnsmasq.d/custom.conf").unwrap();
     let _ = custom_file_write.write(content.as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_parse_request() {
+        // Positive 
+
+        // Check "list" endpoint
+        let input = "GET /list?name=&ip=&secret=ABCDEF HTTP/1.1";
+        assert_eq!(parse_request(input), Ok(vec!["list", "", "", "ABCDEF"]));
+
+        // Check "add" endpoint
+        let input = "PUT /add?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF HTTP/1.1";
+        assert_eq!(parse_request(input), Ok(vec!["add", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
+
+        // Check "delete" endpoint
+        let input = "POST /delete?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF HTTP/1.1";
+        assert_eq!(parse_request(input), Ok(vec!["delete", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
+
+        // Additional query parameters should be ignored
+        let input = "PUT /add?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF&test=true HTTP/1.1";
+        assert_eq!(parse_request(input), Ok(vec!["add", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
+
+        // Missing query parameters should return Err(400)
+        let input = "GET /list HTTP/1.1";
+        assert_eq!(parse_request(input), Err(400));
+
+        // Empty query parameters should return Err(400) for add and delete
+        //let input = "PUT /add?name=&ip=&secret= HTTP/1.1";
+        //assert_eq!(parse_request(input), Err(400));
+
+        // Empty query parameters should return Err(400) for add and delete
+        //let input = "POST /delete?name=&ip=&secret= HTTP/1.1";
+        //assert_eq!(parse_request(input), Err(400));
+    }
+
+    #[test]
+    fn test_parse_address_string() {
+        assert_eq!(
+            parse_address_string("address=/test.myhost.de/127.0.0.1"),
+            vec!["test.myhost.de", "127.0.0.1"]
+        );
+    }
+
+    #[test]
+    fn test_parse_address_vector_into_json_string() {
+        let adr1 = "address=/test1/127.0.0.1";
+        let adr2 = "address=/test2/127.0.0.1";
+        let list_of_addrs = vec![
+            parse_address_string(adr1),
+            parse_address_string(adr2),
+        ];
+
+        assert_eq!(
+            parse_address_vector_into_json_string(list_of_addrs),
+            "{\"addresses\":[{\"address\":\"test1\",\"ip\":\"127.0.0.1\"},{\"address\":\"test2\",\"ip\":\"127.0.0.1\"},]}"
+        );
+    }
+
+    #[test]
+    fn test_parse_address_vector_into_address_string() {
+        let adr1 = "address=/test1/127.0.0.1";
+        let adr2 = "address=/test2/127.0.0.1";
+        let list_of_addrs = vec![
+            parse_address_string(adr1),
+            parse_address_string(adr2),
+        ];
+
+        assert_eq!(
+            parse_address_vector_into_address_string(list_of_addrs),
+            "address=/test1/127.0.0.1\naddress=/test2/127.0.0.1\n"
+        );
+    }
 }
