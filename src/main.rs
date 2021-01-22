@@ -3,6 +3,7 @@ use std::process::Command;
 use std::fs::File;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
+use nix::unistd::Uid;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EntryRequestDto {
@@ -13,7 +14,11 @@ struct EntryRequestDto {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    
+    // Check for root privileges first
+    if !Uid::effective().is_root() {
+        //panic!("You must run this executable with root permissions");
+    }
+
     println!("Starting up dnsmasq-dynconf");
     initialize_files();
 
@@ -39,7 +44,9 @@ async fn action_list() -> HttpResponse {
     // Parse all custom entries into a json representation
     let json_response = parse_address_vector_into_json_string(custom_entries);
 
-    HttpResponse::Ok().json(json_response)
+    HttpResponse::Ok()
+        .set_header("Content-Type", "application/json")
+        .body(json_response)
 }
 
 async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
@@ -99,12 +106,16 @@ fn initialize_files() {
     println!("Checking files (should be owned by root)");
     if !File::open("/etc/dnsmasq-dynconf.token").is_ok() {
         println!("Creating empty token file at '/etc/dnsmasq-dynconf.token'...");
-        let _ = File::create("/etc/dnsmasq-dynconf.token");
+        if !File::create("/etc/dnsmasq-dynconf.token").is_ok() {
+            panic!("Could not create '/etc/dnsmasq-dynconf.token'!")
+        }
     }
 
     if !File::open("/etc/dnsmasq.d/custom.conf").is_ok() {
         println!("Creating empty config file at '/etc/dnsmasq.d/custom.conf'...");
-        let _ = File::create("/etc/dnsmasq.d/custom.conf");
+        if !File::create("/etc/dnsmasq.d/custom.conf").is_ok() {
+            panic!("Could not create '/etc/dnsmasq.d/custom.conf'!")
+        }
     }
 
     // TODO check for root only write privileges
