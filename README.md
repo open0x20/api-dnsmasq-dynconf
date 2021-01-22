@@ -10,17 +10,27 @@ Owner of the files should be root as the program is expecting root privileges.
 
 ## Endpoints
 
-Every endpoints expects the following query parameters: name, ip and secret.
-
 | Method | Path    | Description                                                              |
 |--------|---------|--------------------------------------------------------------------------|
 | GET    | /list   | Returns a JSON formatted list of entries from /etc/dnsmasq.d/custom.conf |
 | PUT    | /add    | Adds an entry to /etc/dnsmasq.d/custom.conf                              |
 | POST   | /delete | Removes an entry from /etc/dnsmasq.d/custom.conf                         |
 
+Every request (except to /list, which is public) requires the following payload:
+```
+{
+    "name": "",
+    "ip": "",
+    "secret": ""
+}
+```
+It is also required to set the header `Content-Type: application/json` for all requests with a json payload.
+Otherwise a `400 Bad Request` will be returned.
+
 ### Examples
 ```
-GET /list?name=&ip=&secret=ABCDEF
+GET /list
+
 
 HTTP/1.1 200 OK
 {
@@ -37,23 +47,50 @@ HTTP/1.1 200 OK
 }
 ```
 ```
-PUT /add?name=test3.myhost.de&ip=127.0.0.3&secret=ABCDEF
+PUT /add
+Content-Type: application/json
+
+{
+    "name": "test3.myhost.de",
+    "ip": "127.0.0.3",
+    "secret": "ABCDEF"
+}
 
 HTTP/1.1 200 OK
 ```
 ```
-POST /delete?name=test3.myhost.de&ip=127.0.0.3&secret=ABCDEF
+POST /delete
+Content-Type: application/json
+
+{
+    "name": "test3.myhost.de",
+    "ip": "127.0.0.3",
+    "secret": "ABCDEF"
+}
 
 HTTP/1.1 200 OK
 ```
+
 Some negative examples aswell...
 ```
-GET /list?name=&ip=&secret=WRONG
+PUT /add
+Content-Type: application/json
+
+{
+    "name": "test3.myhost.de",
+    "ip": "127.0.0.3",
+    "secret": "WRONG_SECRET"
+}
 
 HTTP/1.1 401 Unauthorized
 ```
 ```
-PUT /add?missing=parameters&equals=true
+PUT /add
+Content-Type: application/json
+
+{
+    "name": "test3.myhost.de"
+}
 
 HTTP/1.1 400 Bad Request
 ```
