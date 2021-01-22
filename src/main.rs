@@ -16,7 +16,7 @@ struct EntryRequestDto {
 async fn main() -> std::io::Result<()> {
     // Check for root privileges first
     if !Uid::effective().is_root() {
-        //panic!("You must run this executable with root permissions");
+        panic!("You must run this executable with root permissions");
     }
 
     println!("Starting up dnsmasq-dynconf");
