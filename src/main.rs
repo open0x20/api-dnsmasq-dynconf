@@ -65,7 +65,7 @@ async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
     write_to_custom_file(parse_address_vector_into_address_string(custom_entries));
 
     // Reload the dnsmasqd.service
-    let _ = Command::new("/usr/bin/systemctl restart dnsmasq.service").spawn();
+    let _ = Command::new("$(which systemctl) restart dnsmasq.service").spawn();
 
     HttpResponse::Ok().finish()
 }
@@ -97,7 +97,7 @@ async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
     write_to_custom_file(parse_address_vector_into_address_string(custom_entries));
 
     // Reload the dnsmasqd.service
-    let _ = Command::new("/usr/bin/systemctl restart dnsmasq.service").spawn();
+    let _ = Command::new("$(which systemctl) restart dnsmasq.service").spawn();
 
     HttpResponse::Ok().finish()
 }
