@@ -52,6 +52,7 @@ async fn main() -> std::io::Result<()> {
         },
         Err(e) => {
             eprintln!("Error, {}", e);
+            Ok(())
         }
     }
 }
