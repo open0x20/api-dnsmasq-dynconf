@@ -94,3 +94,50 @@ Content-Type: application/json
 
 HTTP/1.1 400 Bad Request
 ```
+
+## Setup
+### Building
+Either compile on the target itself or install cross-compile-stuff.
+
+Read more on cross compiling rust [here](https://chacin.dev/blog/cross-compiling-rust-for-the-raspberry-pi/).
+
+Install the target architecture:
+```
+# RaspberryPi 2 or lower
+rustup target add arm-unknown-linux-gnueabihf
+
+# RaspberryPi 3 or higher
+rustup target add armv7-unknown-linux-gnueabihf
+```
+
+#### Compile on RaspberryPi
+After the architecture has been installed with `rustup`, simply run the following:
+```
+# For RaspberryPi 2 or lower
+cargo build --release --target arm-unknown-linux-gnueabihf
+
+# For RaspberryPi 3 or higher
+cargo build --release --target armv7-unknown-linux-gnueabihf
+
+```
+
+#### Cross-Compiling
+Install the cross-compiler (debian):
+```
+# Not tested if existent
+apt install arm-linux-gnueabihf-gcc
+apt install armv7-linux-gnueabihf-gcc
+```
+
+Install the cross-linker (debian):
+```
+TODO
+```
+
+### Installation
+Copy the `dnsmasq-dynconf.service` file into `/etc/systemd/system/` and the binary `dnsmasq-dynconf` into `/usr/sbin/`. Then you can simply run the following
+commands to start/stop the service:
+```
+systemctl start dnsmasq-dynconf.service
+systemctl stop dnsmasq-dynconf.service
+```

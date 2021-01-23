@@ -13,6 +13,11 @@ path = "src/main.rs"
 [build]
 target = "armv7-unknown-linux-gnueabihf"
 
+[profile.release]
+lto = true
+opt-level = 's'
+panic = 'abort'
+
 [dependencies]
 regex = "1"
 actix-web = "3"
