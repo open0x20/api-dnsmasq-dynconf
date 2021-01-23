@@ -4,6 +4,7 @@ use std::fs::File;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use nix::unistd::Uid;
+use daemonize::Daemonize;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EntryRequestDto {
@@ -14,27 +15,45 @@ struct EntryRequestDto {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Check for root privileges first
-    if !Uid::effective().is_root() {
-        panic!("You must run this executable with root permissions");
+    let stdout = File::create("/tmp/dnsmasq-dynconf.out").unwrap();
+    let stderr = File::create("/tmp/dnsmasq-dynconf.err").unwrap();
+
+    let daemonize = Daemonize::new()
+        .pid_file("/run/dnsmasq-dynconf.pid")
+        .working_directory("/tmp")
+        .user("root")
+        .group("root")
+        .stdout(stdout)
+        .stderr(stderr);
+
+    match daemonize.start() {
+        Ok(_) => {
+            // Check for root privileges first
+            if !Uid::effective().is_root() {
+                panic!("You must run this executable with root permissions");
+            }
+
+            println!("Starting up dnsmasq-dynconf");
+            initialize_files();
+
+            println!("Starting REST-API on 0.0.0.0:7878");
+            HttpServer::new(|| {
+                App::new()
+                    // GET /list
+                    .service(web::resource("/list").route(web::get().to(action_list)))
+                    // PUT /add
+                    .service(web::resource("/add").route(web::put().to(action_add)))
+                    // POST /delete
+                    .service(web::resource("/delete").route(web::post().to(action_delete)))
+            })
+            .bind("0.0.0.0:7878")?
+            .run()
+            .await
+        },
+        Err(e) => {
+            eprintln!("Error, {}", e);
+        }
     }
-
-    println!("Starting up dnsmasq-dynconf");
-    initialize_files();
-
-    println!("Starting REST-API on 0.0.0.0:7878");
-    HttpServer::new(|| {
-        App::new()
-            // GET /list
-            .service(web::resource("/list").route(web::get().to(action_list)))
-            // PUT /add
-            .service(web::resource("/add").route(web::put().to(action_add)))
-            // POST /DELETE
-            .service(web::resource("/delete").route(web::post().to(action_delete)))
-    })
-    .bind("0.0.0.0:7878")?
-    .run()
-    .await
 }
 
 async fn action_list() -> HttpResponse {
