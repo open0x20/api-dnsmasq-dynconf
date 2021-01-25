@@ -1,12 +1,5 @@
 # api-dnsmasq-dynconf
-
-## Installation
-Requires the following two files:
-```
-/etc/dnsmasq-dynconf.token       # contains your secret token
-/etc/dnsmasq.d/custom.conf       # create as empty file
-```
-Owner of the files should be root as the program is expecting root privileges.
+A service to manage dnsmasq entries/records via HTTP API.
 
 ## Endpoints
 
@@ -36,11 +29,11 @@ HTTP/1.1 200 OK
 {
     "addresses": [
         {
-            "address": "test1.myhost.de",
+            "name": "test1.myhost.de",
             "ip": "127.0.0.1"
         },
         {
-            "address": "test2.myhost.de",
+            "name": "test2.myhost.de",
             "ip": "127.0.0.2"
         },
     ]
@@ -96,6 +89,14 @@ HTTP/1.1 400 Bad Request
 ```
 
 ## Setup
+The following files are required prior to startup. They will be created empty if missing:
+```
+/etc/dnsmasq-dynconf.token       # contains your secret token
+/etc/dnsmasq.d/custom.conf       # create as empty file
+```
+Owner of the files should be root as the program is expecting root privileges. The service will listen on
+127.0.0.1:47078. Use a reverse proxy for https. DO NOT USE HTTP TO SEND SECRETS!
+
 ### Building
 Either compile on the target itself or install cross-compile-stuff.
 

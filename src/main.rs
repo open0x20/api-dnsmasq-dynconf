@@ -36,7 +36,7 @@ async fn main() -> std::io::Result<()> {
             println!("Starting up dnsmasq-dynconf");
             initialize_files();
 
-            println!("Starting REST-API on 0.0.0.0:7878");
+            println!("Starting REST-API on 127.0.0.1:47078");
             HttpServer::new(|| {
                 App::new()
                     // GET /list
@@ -209,13 +209,14 @@ fn parse_address_vector_into_json_string(addresses: Vec<Vec<String>>) -> String 
     json.push_str("{\"addresses\":[");
 
     for adr in addresses {
-        json.push_str("{\"address\":\"");
+        json.push_str("{\"name\":\"");
         json.push_str(&adr[0][..]);
         json.push_str("\",\"ip\":\"");
         json.push_str(&adr[1][..]);
         json.push_str("\"},");
     }
 
+    json.pop();
     json.push_str("]}");
 
     json

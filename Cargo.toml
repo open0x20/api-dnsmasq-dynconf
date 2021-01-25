@@ -10,9 +10,6 @@ edition = "2018"
 name = "dnsmasq-dynconf"
 path = "src/main.rs"
 
-[build]
-target = "armv7-unknown-linux-gnueabihf"
-
 [profile.release]
 lto = true
 opt-level = 's'
