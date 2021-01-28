@@ -5,16 +5,14 @@ pipeline {
         }
     }
     stages {
-        stage('Build') {
-            steps {
-                echo 'Building...'
-                sh 'cargo build --release'
-            }
-        }
         stage('Test') {
             steps {
                 echo 'Testing...'
-                sh 'cargo test'
+                sh 'cat Cargo.toml'
+                sh 'cargo test --release'
+                sh 'file target/release/dnsmdcd'
+                sh 'ldd target/release/dnsmdcd'
+                sh 'readelf -e target/release/dnsmdcd'
             }
         }
     }
