@@ -15,11 +15,11 @@ struct EntryRequestDto {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let stdout = File::create("/tmp/dnsmasq-dynconf.out").unwrap();
-    let stderr = File::create("/tmp/dnsmasq-dynconf.err").unwrap();
+    let stdout = File::create("/tmp/dnsmdcd.out").unwrap();
+    let stderr = File::create("/tmp/dnsmdcd.err").unwrap();
 
     let daemonize = Daemonize::new()
-        .pid_file("/run/dnsmasq-dynconf.pid")
+        .pid_file("/run/dnsmdcd.pid")
         .working_directory("/tmp")
         .user("root")
         .group("root")
@@ -33,10 +33,10 @@ async fn main() -> std::io::Result<()> {
                 panic!("You must run this executable with root permissions");
             }
 
-            println!("Starting up dnsmasq-dynconf");
+            println!("Starting up dnsmdcd");
             initialize_files();
 
-            println!("Starting REST-API on 127.0.0.1:47078");
+            println!("Starting dnsmasq dynamic configurator daemon (dnsmdcd) on 127.0.0.1:47078");
             HttpServer::new(|| {
                 App::new()
                     // GET /list
@@ -46,7 +46,7 @@ async fn main() -> std::io::Result<()> {
                     // POST /delete
                     .service(web::resource("/delete").route(web::post().to(action_delete)))
             })
-            .bind("0.0.0.0:7878")?
+            .bind("127.0.0.1:47078")?
             .run()
             .await
         },
@@ -132,10 +132,10 @@ async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
 
 fn initialize_files() {
     println!("Checking files (should be owned by root)");
-    if !File::open("/etc/dnsmasq-dynconf.token").is_ok() {
-        println!("Creating empty token file at '/etc/dnsmasq-dynconf.token'...");
-        if !File::create("/etc/dnsmasq-dynconf.token").is_ok() {
-            panic!("Could not create '/etc/dnsmasq-dynconf.token'!")
+    if !File::open("/etc/dnsmdcd.token").is_ok() {
+        println!("Creating empty token file at '/etc/dnsmdcd.token'...");
+        if !File::create("/etc/dnsmdcd.token").is_ok() {
+            panic!("Could not create '/etc/dnsmdcd.token'!")
         }
     }
 
@@ -148,7 +148,7 @@ fn initialize_files() {
 }
 
 fn is_authorized(secret: &str) -> bool {
-    let mut token_file = File::open("/etc/dnsmasq-dynconf.token").unwrap();
+    let mut token_file = File::open("/etc/dnsmdcd.token").unwrap();
     let mut token = String::new();
     let _ = token_file.read_to_string(&mut token);
 
@@ -277,7 +277,7 @@ mod tests {
 
         assert_eq!(
             parse_address_vector_into_json_string(list_of_addrs),
-            "{\"addresses\":[{\"address\":\"test1\",\"ip\":\"127.0.0.1\"},{\"address\":\"test2\",\"ip\":\"127.0.0.1\"},]}"
+            "{\"addresses\":[{\"name\":\"test1\",\"ip\":\"127.0.0.1\"},{\"name\":\"test2\",\"ip\":\"127.0.0.1\"}]}"
         );
     }
 

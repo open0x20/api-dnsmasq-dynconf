@@ -9,7 +9,7 @@ A service to manage dnsmasq entries/records via HTTP API.
 | PUT    | /add    | Adds an entry to /etc/dnsmasq.d/custom.conf                              |
 | POST   | /delete | Removes an entry from /etc/dnsmasq.d/custom.conf                         |
 
-Every request (except to /list, which is public) requires the following payload:
+Every request (except /list, which is public) requires the following payload:
 ```
 {
     "name": "",
@@ -29,11 +29,11 @@ HTTP/1.1 200 OK
 {
     "addresses": [
         {
-            "name": "test1.myhost.de",
+            "name": "test1.example.com",
             "ip": "127.0.0.1"
         },
         {
-            "name": "test2.myhost.de",
+            "name": "test2.example.com",
             "ip": "127.0.0.2"
         },
     ]
@@ -44,7 +44,7 @@ PUT /add
 Content-Type: application/json
 
 {
-    "name": "test3.myhost.de",
+    "name": "test3.example.com",
     "ip": "127.0.0.3",
     "secret": "ABCDEF"
 }
@@ -56,7 +56,7 @@ POST /delete
 Content-Type: application/json
 
 {
-    "name": "test3.myhost.de",
+    "name": "test3.example.com",
     "ip": "127.0.0.3",
     "secret": "ABCDEF"
 }
@@ -70,7 +70,7 @@ PUT /add
 Content-Type: application/json
 
 {
-    "name": "test3.myhost.de",
+    "name": "test3.example.com",
     "ip": "127.0.0.3",
     "secret": "WRONG_SECRET"
 }
@@ -82,7 +82,7 @@ PUT /add
 Content-Type: application/json
 
 {
-    "name": "test3.myhost.de"
+    "name": "test3.example.com"
 }
 
 HTTP/1.1 400 Bad Request
@@ -91,14 +91,23 @@ HTTP/1.1 400 Bad Request
 ## Setup
 The following files are required prior to startup. They will be created empty if missing:
 ```
-/etc/dnsmasq-dynconf.token       # contains your secret token
-/etc/dnsmasq.d/custom.conf       # create as empty file
+/etc/dnsmdcd.token          # contains your secret token
+/etc/dnsmasq.d/custom.conf  # create as empty file
 ```
 Owner of the files should be root as the program is expecting root privileges. The service will listen on
-127.0.0.1:47078. Use a reverse proxy for https. DO NOT USE HTTP TO SEND SECRETS!
+127.0.0.1:47078. Use a reverse proxy for HTTPS.
+
+### Binaries
+Precompiled binaries can be found [here](https://binaries.open0x20.de/api-dnsmasq-dynconf).
+
+SHA256 hashes:
+```
+latest/arm/dnsmdcd   -
+latest/armv7/dnsmdcd - 
+```
 
 ### Building
-Either compile on the target itself or install cross-compile-stuff.
+Either compile on the target itself or install a cross compiler.
 
 Read more on cross compiling rust [here](https://chacin.dev/blog/cross-compiling-rust-for-the-raspberry-pi/).
 
@@ -136,9 +145,9 @@ TODO
 ```
 
 ### Installation
-Copy the `dnsmasq-dynconf.service` file into `/etc/systemd/system/` and the binary `dnsmasq-dynconf` into `/usr/sbin/`. Then you can simply run the following
+Copy the `dnsmdcd.service` file into `/etc/systemd/system/` and the binary `dnsmdcd` into `/usr/sbin/`. Then you can simply run the following
 commands to start/stop the service:
 ```
-systemctl start dnsmasq-dynconf.service
-systemctl stop dnsmasq-dynconf.service
+systemctl start dnsmdcd.service
+systemctl stop dnsmdcd.service
 ```
