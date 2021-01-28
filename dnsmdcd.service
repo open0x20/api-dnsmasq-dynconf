@@ -1,0 +1,14 @@
+[Unit]
+Description=DNSmasq Dynamic Configurator Daemon
+Before=nginx.target
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/run/dnsmdcd.pid
+ExecStart=/usr/sbin/dnsmdcd
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+
+[Install]
+WantedBy=multi-user.target

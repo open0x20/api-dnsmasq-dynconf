@@ -1,16 +1,7 @@
 # api-dnsmasq-dynconf
-
-## Installation
-Requires the following two files:
-```
-/etc/dnsmasq-dynconf.token       # contains your secret token
-/etc/dnsmasq.d/custom.conf       # create as empty file
-```
-Owner of the files should be root as the program is expecting root privileges.
+A service to manage dnsmasq entries/records via HTTP API.
 
 ## Endpoints
-
-Every endpoints expects the following query parameters: name, ip and secret.
 
 | Method | Path    | Description                                                              |
 |--------|---------|--------------------------------------------------------------------------|
@@ -18,42 +9,146 @@ Every endpoints expects the following query parameters: name, ip and secret.
 | PUT    | /add    | Adds an entry to /etc/dnsmasq.d/custom.conf                              |
 | POST   | /delete | Removes an entry from /etc/dnsmasq.d/custom.conf                         |
 
+Every request (except /list, which is public) requires the following payload:
+```
+{
+    "name": "",
+    "ip": "",
+    "secret": ""
+}
+```
+It is also required to set the header `Content-Type: application/json` for all requests with a json payload.
+Otherwise a `400 Bad Request` will be returned.
+
 ### Examples
 ```
-GET /list?name=&ip=&secret=ABCDEF
+GET /list
+
 
 HTTP/1.1 200 OK
 {
     "addresses": [
         {
-            "address": "test1.myhost.de",
+            "name": "test1.example.com",
             "ip": "127.0.0.1"
         },
         {
-            "address": "test2.myhost.de",
+            "name": "test2.example.com",
             "ip": "127.0.0.2"
         },
     ]
 }
 ```
 ```
-PUT /add?name=test3.myhost.de&ip=127.0.0.3&secret=ABCDEF
+PUT /add
+Content-Type: application/json
+
+{
+    "name": "test3.example.com",
+    "ip": "127.0.0.3",
+    "secret": "ABCDEF"
+}
 
 HTTP/1.1 200 OK
 ```
 ```
-POST /delete?name=test3.myhost.de&ip=127.0.0.3&secret=ABCDEF
+POST /delete
+Content-Type: application/json
+
+{
+    "name": "test3.example.com",
+    "ip": "127.0.0.3",
+    "secret": "ABCDEF"
+}
 
 HTTP/1.1 200 OK
 ```
+
 Some negative examples aswell...
 ```
-GET /list?name=&ip=&secret=WRONG
+PUT /add
+Content-Type: application/json
+
+{
+    "name": "test3.example.com",
+    "ip": "127.0.0.3",
+    "secret": "WRONG_SECRET"
+}
 
 HTTP/1.1 401 Unauthorized
 ```
 ```
-PUT /add?missing=parameters&equals=true
+PUT /add
+Content-Type: application/json
+
+{
+    "name": "test3.example.com"
+}
 
 HTTP/1.1 400 Bad Request
+```
+
+## Setup
+The following files are required prior to startup. They will be created empty if missing:
+```
+/etc/dnsmdcd.token          # contains your secret token
+/etc/dnsmasq.d/custom.conf  # create as empty file
+```
+Owner of the files should be root as the program is expecting root privileges. The service will listen on
+127.0.0.1:47078. Use a reverse proxy for HTTPS.
+
+### Binaries
+Precompiled binaries can be found [here](https://binaries.open0x20.de/api-dnsmasq-dynconf).
+
+SHA256 hashes:
+```
+sha256sum -b FILE
+latest/arm/dnsmdcd   - ce70625f588c7c82145c34253ea841190765a39b4756f9af15bfac5e8f62dc0b
+latest/armv7/dnsmdcd - 3b147a2abe60ba3aa6f2c46601bd26279710b5b452fa6acc5f8343d888e53736
+```
+
+### Building
+Either compile on the target itself or install a cross compiler.
+
+Read more on cross compiling rust [here](https://chacin.dev/blog/cross-compiling-rust-for-the-raspberry-pi/).
+
+Install the target architecture:
+```
+# RaspberryPi 2 or lower
+rustup target add arm-unknown-linux-gnueabihf
+
+# RaspberryPi 3 or higher
+rustup target add armv7-unknown-linux-gnueabihf
+```
+
+#### Compile on RaspberryPi
+After the architecture has been installed with `rustup`, simply run the following:
+```
+# For RaspberryPi 2 or lower
+cargo build --release --target arm-unknown-linux-gnueabihf
+
+# For RaspberryPi 3 or higher
+cargo build --release --target armv7-unknown-linux-gnueabihf
+
+```
+
+#### Cross-Compiling
+Install the cross-compiler (debian):
+```
+# Not tested if existent
+apt install arm-linux-gnueabihf-gcc
+apt install armv7-linux-gnueabihf-gcc
+```
+
+Install the cross-linker (debian):
+```
+TODO
+```
+
+### Installation
+Copy the `dnsmdcd.service` file into `/etc/systemd/system/` and the binary `dnsmdcd` into `/usr/sbin/`. Then you can simply run the following
+commands to start/stop the service:
+```
+systemctl start dnsmdcd.service
+systemctl stop dnsmdcd.service
 ```

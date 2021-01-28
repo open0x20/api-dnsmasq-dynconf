@@ -1,149 +1,178 @@
 use std::io::prelude::*;
-use std::net::TcpListener;
-use std::net::TcpStream;
 use std::process::Command;
 use std::fs::File;
-use regex::Regex;
+use actix_web::{web, App, HttpResponse, HttpServer};
+use serde::{Deserialize, Serialize};
+use nix::unistd::Uid;
+use daemonize::Daemonize;
 
-fn main() -> Result<(), i32> {
-    let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
-
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-
-        handle_connection(stream);
-    }
-
-    Ok(())
+#[derive(Debug, Serialize, Deserialize)]
+struct EntryRequestDto {
+    name: String,
+    ip: String,
+    secret: String
 }
 
-/* The main procedure for every new request. Parses the request and acts
- * accordingly. Either lists all the contents of /etc/dnsmasq.d/custom.conf,
- * appends or deletes from it.
- */
-fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 1024];
-    let response_ok = "HTTP/1.1 200 OK\r\n\r\n";
-    //let response_bad = "HTTP/1.1 400 Bad Request\r\n\r\n";
-    let response_unauthorized = "HTTP/1.1 401 Unauthorized\r\n\r\n";
-    //let response_internal_error = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
-    // TODO error handling
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let stdout = File::create("/tmp/dnsmdcd.out").unwrap();
+    let stderr = File::create("/tmp/dnsmdcd.err").unwrap();
 
-    stream.read(&mut buffer).unwrap();
-    let stream_contents = String::from_utf8_lossy(&buffer[..]);
+    let daemonize = Daemonize::new()
+        .pid_file("/run/dnsmdcd.pid")
+        .working_directory("/tmp")
+        .user("root")
+        .group("root")
+        .stdout(stdout)
+        .stderr(stderr);
 
-    // Parse the request
-    let query_params = parse_request(&stream_contents[..]).unwrap(); // todo
+    match daemonize.start() {
+        Ok(_) => {
+            // Check for root privileges first
+            if !Uid::effective().is_root() {
+                panic!("You must run this executable with root permissions");
+            }
 
+            println!("Starting up dnsmdcd");
+            initialize_files();
+
+            println!("Starting dnsmasq dynamic configurator daemon (dnsmdcd) on 127.0.0.1:47078");
+            HttpServer::new(|| {
+                App::new()
+                    // GET /list
+                    .service(web::resource("/list").route(web::get().to(action_list)))
+                    // PUT /add
+                    .service(web::resource("/add").route(web::put().to(action_add)))
+                    // POST /delete
+                    .service(web::resource("/delete").route(web::post().to(action_delete)))
+            })
+            .bind("127.0.0.1:47078")?
+            .run()
+            .await
+        },
+        Err(e) => {
+            eprintln!("Error, {}", e);
+            Ok(())
+        }
+    }
+}
+
+async fn action_list() -> HttpResponse {
+    // Load entries from custom.conf
+    let custom_entries = load_custom_dnsmasq_entries_from_file();
+
+    // Parse all custom entries into a json representation
+    let json_response = parse_address_vector_into_json_string(custom_entries);
+
+    HttpResponse::Ok()
+        .set_header("Content-Type", "application/json")
+        .body(json_response)
+}
+
+async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
     // Check for authorization
-    let mut token_file = File::open("/etc/dnsmasq-dynconf.token").unwrap();
+    if !is_authorized(&item.0.secret[..]) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    // Load entries from custom.conf
+    let mut custom_entries = load_custom_dnsmasq_entries_from_file();
+
+    // Add the requested entry to our address vector
+    custom_entries.push(vec![item.0.name, item.0.ip]);
+
+    // Write to file custom.con (overwriting)
+    write_to_custom_file(parse_address_vector_into_address_string(custom_entries));
+
+    // Reload the dnsmasqd.service
+    let _ = Command::new("systemctl")
+                .arg("restart")
+                .arg("dnsmasq.service")
+                .output()
+                .expect("Failed to restart dnsmasq.service");
+
+    HttpResponse::Ok().finish()
+}
+
+async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
+    // Check for authorization
+    if !is_authorized(&item.0.secret[..]) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    // Load entries from custom.conf
+    let mut custom_entries = load_custom_dnsmasq_entries_from_file();
+
+    // Find entries that have to be removed
+    let mut indicies_to_delete: Vec<usize> = Vec::new();
+    for i in 0..custom_entries.len() {
+        if (item.0.name == custom_entries[i][0]) && (item.0.ip == custom_entries[i][1]) {
+            indicies_to_delete.push(i);
+        }
+    }
+
+    // Remove entries
+    indicies_to_delete.reverse();
+    for itd in indicies_to_delete {
+        custom_entries.remove(itd);
+    }
+    
+    // Write to file custom.con (overwriting)
+    write_to_custom_file(parse_address_vector_into_address_string(custom_entries));
+
+    // Reload the dnsmasqd.service
+    let _ = Command::new("systemctl")
+                .arg("restart")
+                .arg("dnsmasq.service")
+                .output()
+                .expect("Failed to restart dnsmasq.service");
+
+    HttpResponse::Ok().finish()
+}
+
+fn initialize_files() {
+    println!("Checking files (should be owned by root)");
+    if !File::open("/etc/dnsmdcd.token").is_ok() {
+        println!("Creating empty token file at '/etc/dnsmdcd.token'...");
+        if !File::create("/etc/dnsmdcd.token").is_ok() {
+            panic!("Could not create '/etc/dnsmdcd.token'!")
+        }
+    }
+
+    if !File::open("/etc/dnsmasq.d/custom.conf").is_ok() {
+        println!("Creating empty config file at '/etc/dnsmasq.d/custom.conf'...");
+        if !File::create("/etc/dnsmasq.d/custom.conf").is_ok() {
+            panic!("Could not create '/etc/dnsmasq.d/custom.conf'!")
+        }
+    }
+}
+
+fn is_authorized(secret: &str) -> bool {
+    let mut token_file = File::open("/etc/dnsmdcd.token").unwrap();
     let mut token = String::new();
     let _ = token_file.read_to_string(&mut token);
 
-    if token.trim() != query_params[3] {
-        println!("{} != {}", token.as_str(), query_params[3]);
-        let _ = stream.write((&response_unauthorized).as_bytes());
-        return;
+    if token.trim() != secret {
+        false
+    } else {
+        true
     }
+}
 
+fn load_custom_dnsmasq_entries_from_file() -> Vec<Vec<String>>{
     // Load all entries from /etc/dnsmasq.d/custom.conf
     let mut custom_file_read = File::open("/etc/dnsmasq.d/custom.conf").unwrap();
     let mut contents = String::new();
     let _ = custom_file_read.read_to_string(&mut contents);
 
     let entries_raw: Vec<&str> = contents.split_terminator("\n").collect();
-    let mut entries: Vec<Vec<&str>> = Vec::new();
+    let mut entries: Vec<Vec<String>> = Vec::new();
 
     for e in entries_raw {
         entries.push(parse_address_string(e));
     }
 
-    // If it's a list simply return all entries
-    if "list" == query_params[0] {
-        let response_body: String = parse_address_vector_into_json_string(entries);
-        let _ = stream.write((&response_ok).as_bytes());
-        let _ = stream.write(response_body.as_bytes());
-
-        return;
-    }
-
-    // Add an entry
-    if "add" == query_params[0] {
-        entries.push(vec![query_params[1], query_params[2]]);
-        write_to_custom_file(parse_address_vector_into_address_string(entries));
-
-        // Reload the dnsmasqd.service
-        let _ = Command::new("/usr/bin/systemctl reload dnsmasqd.service").spawn();
-
-        // Return a HTTP 200 OK response
-        let _ = stream.write((&response_ok).as_bytes());
-
-        return;
-    }
-
-    // Delete one or more existing entries
-    if "delete" == query_params[0] {
-        let mut indicies_to_delete: Vec<usize> = Vec::new();
-        for i in 0..entries.len() {
-            if (query_params[1] == entries[i][0]) && (query_params[2] == entries[i][1]) {
-                indicies_to_delete.push(i);
-            }
-        }
-
-        indicies_to_delete.reverse();
-        for itd in indicies_to_delete {
-            entries.remove(itd);
-        }
-        
-        write_to_custom_file(parse_address_vector_into_address_string(entries));
-
-        // Reload the dnsmasqd.service
-        let _ = Command::new("/usr/bin/systemctl reload dnsmasqd.service").spawn();
-
-        // Return a HTTP 200 OK response
-        let _ = stream.write((&response_ok).as_bytes());
-
-        return;
-    }
-}
-
-/* Extracts the "method" and the required query parameters "name", "ip" and
- * "secret" as a vector of length 4. If a query parameter is missing an
- * appropriate http error code is returned.
- * The query parameters are allowed to be empty.
- *
- * The input string looks somewhat like this:
- * GET /list?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF HTTP/1.1
- * Host: localhost:11337
- * User-Agent: Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:84.0) Gecko/20100101 Firefox/84.0
- * Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp
- * Accept-Language: en-US,en;q=0.5
- * Accept-Encoding: gzip, deflate
- * Connection: keep-alive
- * Upgrade-Insecure-Requests: 1
- * 
- * assert_eq!(parse_request(input), Ok(vec!["list", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
- */
-fn parse_request(request : &str) -> Result<Vec<&str>, i32> {
-    // TODO static regex
-    let method_regex: Regex = Regex::new(r"(^GET\s/list|^PUT\s/add|^POST\s/delete)").unwrap();
-    let name_regex: Regex = Regex::new(r"name=[a-zA-Z0-9\.]*").unwrap();
-    let ip_regex: Regex = Regex::new(r"ip=[0-9\.]*").unwrap();
-    let secret_regex: Regex = Regex::new(r"secret=[a-zA-Z0-9]*").unwrap();
-
-    let method_match = method_regex.find(request).ok_or(400)?;
-    let name_match = name_regex.find(request).ok_or(400)?;
-    let ip_match = ip_regex.find(request).ok_or(400)?;
-    let secret_match = secret_regex.find(request).ok_or(400)?;
-
-    let method = method_match.as_str().split_terminator("/").skip(1).next().unwrap_or("");
-    let name = name_match.as_str().split_terminator("=").skip(1).next().unwrap_or("");
-    let ip = ip_match.as_str().split_terminator("=").skip(1).next().unwrap_or("");
-    let secret = secret_match.as_str().split_terminator("=").skip(1).next().unwrap_or("");
-
-    println!("/{}?name={}&ip={}", method, name, ip);
-
-    Ok(vec![method, name, ip, secret])
+    entries
 }
 
 /* Extract the two values of a dnsmasq "address" entry string and return
@@ -154,8 +183,8 @@ fn parse_request(request : &str) -> Result<Vec<&str>, i32> {
  *   vec!["test.myhost.de", "127.0.0.1"]
  * );
  */
-fn parse_address_string(address: &str) -> Vec<&str> {
-    let mut parts: Vec<&str> = address.split_terminator("/").collect();
+fn parse_address_string(address: &str) -> Vec<String> {
+    let mut parts: Vec<String> = address.split_terminator("/").map(|x| String::from(x)).collect();
     parts.remove(0);
 
     parts
@@ -175,18 +204,19 @@ fn parse_address_string(address: &str) -> Vec<&str> {
  *   "{\"addresses\":[{\"address\":\"test1\",\"ip\":\"127.0.0.1\"},{\"address\":\"test2\",\"ip\":\"127.0.0.1\"},]}"
  * );
  */
-fn parse_address_vector_into_json_string(addresses: Vec<Vec<&str>>) -> String {
+fn parse_address_vector_into_json_string(addresses: Vec<Vec<String>>) -> String {
     let mut json: String = String::new();
     json.push_str("{\"addresses\":[");
 
     for adr in addresses {
-        json.push_str("{\"address\":\"");
-        json.push_str(adr[0]);
+        json.push_str("{\"name\":\"");
+        json.push_str(&adr[0][..]);
         json.push_str("\",\"ip\":\"");
-        json.push_str(adr[1]);
+        json.push_str(&adr[1][..]);
         json.push_str("\"},");
     }
 
+    json.pop();
     json.push_str("]}");
 
     json
@@ -206,7 +236,7 @@ fn parse_address_vector_into_json_string(addresses: Vec<Vec<&str>>) -> String {
  *   "address=/test1/127.0.0.1\naddress=/test2/127.0.0.1\n"
  * );
  */
-fn parse_address_vector_into_address_string(addresses: Vec<Vec<&str>>) -> String {
+fn parse_address_vector_into_address_string(addresses: Vec<Vec<String>>) -> String {
     let mut address_string: String = String::new();
 
     for adr in addresses {
@@ -227,38 +257,6 @@ fn write_to_custom_file(content: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_parse_request() {
-        // Positive 
-
-        // Check "list" endpoint
-        let input = "GET /list?name=&ip=&secret=ABCDEF HTTP/1.1";
-        assert_eq!(parse_request(input), Ok(vec!["list", "", "", "ABCDEF"]));
-
-        // Check "add" endpoint
-        let input = "PUT /add?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF HTTP/1.1";
-        assert_eq!(parse_request(input), Ok(vec!["add", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
-
-        // Check "delete" endpoint
-        let input = "POST /delete?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF HTTP/1.1";
-        assert_eq!(parse_request(input), Ok(vec!["delete", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
-
-        // Additional query parameters should be ignored
-        let input = "PUT /add?name=test.myhost.de&ip=127.0.0.1&secret=ABCDEF&test=true HTTP/1.1";
-        assert_eq!(parse_request(input), Ok(vec!["add", "test.myhost.de", "127.0.0.1", "ABCDEF"]));
-
-        // Missing query parameters should return Err(400)
-        let input = "GET /list HTTP/1.1";
-        assert_eq!(parse_request(input), Err(400));
-
-        // Empty query parameters should return Err(400) for add and delete
-        //let input = "PUT /add?name=&ip=&secret= HTTP/1.1";
-        //assert_eq!(parse_request(input), Err(400));
-
-        // Empty query parameters should return Err(400) for add and delete
-        //let input = "POST /delete?name=&ip=&secret= HTTP/1.1";
-        //assert_eq!(parse_request(input), Err(400));
-    }
 
     #[test]
     fn test_parse_address_string() {
@@ -279,7 +277,7 @@ mod tests {
 
         assert_eq!(
             parse_address_vector_into_json_string(list_of_addrs),
-            "{\"addresses\":[{\"address\":\"test1\",\"ip\":\"127.0.0.1\"},{\"address\":\"test2\",\"ip\":\"127.0.0.1\"},]}"
+            "{\"addresses\":[{\"name\":\"test1\",\"ip\":\"127.0.0.1\"},{\"name\":\"test2\",\"ip\":\"127.0.0.1\"}]}"
         );
     }
 
