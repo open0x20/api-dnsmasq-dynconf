@@ -102,8 +102,9 @@ Precompiled binaries can be found [here](https://binaries.open0x20.de/api-dnsmas
 
 SHA256 hashes:
 ```
-latest/arm/dnsmdcd   -
-latest/armv7/dnsmdcd - 
+sha256sum -b FILE
+latest/arm/dnsmdcd   - ce70625f588c7c82145c34253ea841190765a39b4756f9af15bfac5e8f62dc0b
+latest/armv7/dnsmdcd - 3b147a2abe60ba3aa6f2c46601bd26279710b5b452fa6acc5f8343d888e53736
 ```
 
 ### Building
