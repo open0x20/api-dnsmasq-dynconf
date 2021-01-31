@@ -77,6 +77,7 @@ async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
 
     // Load entries from custom.conf
     let mut custom_entries = load_custom_dnsmasq_entries_from_file();
+    let custom_entries_original = load_custom_dnsmasq_entries_from_file();
 
     // Add the requested entry to our address vector
     custom_entries.push(vec![item.0.name, item.0.ip]);
@@ -84,12 +85,13 @@ async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
     // Write to file custom.con (overwriting)
     write_to_custom_file(parse_address_vector_into_address_string(custom_entries));
 
-    // Reload the dnsmasqd.service
-    let _ = Command::new("systemctl")
-                .arg("restart")
-                .arg("dnsmasq.service")
-                .output()
-                .expect("Failed to restart dnsmasq.service");
+    // Try restarting the dnsmasqd.service, rollback in case of error
+    if !restart_dnsmasq() {
+        // Rollback
+        write_to_custom_file(parse_address_vector_into_address_string(custom_entries_original));
+        // Restart again with old configuration file
+        restart_dnsmasq();
+    }
 
     HttpResponse::Ok().finish()
 }
@@ -102,6 +104,7 @@ async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
 
     // Load entries from custom.conf
     let mut custom_entries = load_custom_dnsmasq_entries_from_file();
+    let custom_entries_original = load_custom_dnsmasq_entries_from_file();
 
     // Find entries that have to be removed
     let mut indicies_to_delete: Vec<usize> = Vec::new();
@@ -120,12 +123,13 @@ async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
     // Write to file custom.con (overwriting)
     write_to_custom_file(parse_address_vector_into_address_string(custom_entries));
 
-    // Reload the dnsmasqd.service
-    let _ = Command::new("systemctl")
-                .arg("restart")
-                .arg("dnsmasq.service")
-                .output()
-                .expect("Failed to restart dnsmasq.service");
+    // Try restarting the dnsmasqd.service, rollback in case of error
+    if !restart_dnsmasq() {
+        // Rollback
+        write_to_custom_file(parse_address_vector_into_address_string(custom_entries_original));
+        // Restart again with old configuration file
+        restart_dnsmasq();
+    }
 
     HttpResponse::Ok().finish()
 }
@@ -173,6 +177,25 @@ fn load_custom_dnsmasq_entries_from_file() -> Vec<Vec<String>>{
     }
 
     entries
+}
+
+/**
+ * Restarts the dnsmasq service and returns true in case of success,
+ * false in case of failure. Can panic.
+ * "Reloading" the service is not enough the parse /etc/custom.conf,
+ * it has to be a restart.
+ */
+fn restart_dnsmasq() -> bool {
+    let status = Command::new("systemctl")
+        .arg("restart")
+        .arg("dnsmasq.service")
+        .status()
+        .expect("Failed to spawn child process");
+    
+    match status.code() {
+        Some(0) =>  true,
+        _ => false
+    }
 }
 
 /* Extract the two values of a dnsmasq "address" entry string and return
