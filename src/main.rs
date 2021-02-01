@@ -77,7 +77,7 @@ async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
 
     // Load entries from custom.conf
     let mut custom_entries = load_custom_dnsmasq_entries_from_file();
-    let custom_entries_original = load_custom_dnsmasq_entries_from_file();
+    let custom_entries_original = custom_entries.clone();
 
     // Add the requested entry to our address vector
     custom_entries.push(vec![item.0.name, item.0.ip]);
@@ -104,7 +104,7 @@ async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
 
     // Load entries from custom.conf
     let mut custom_entries = load_custom_dnsmasq_entries_from_file();
-    let custom_entries_original = load_custom_dnsmasq_entries_from_file();
+    let custom_entries_original = custom_entries.clone();
 
     // Find entries that have to be removed
     let mut indicies_to_delete: Vec<usize> = Vec::new();
