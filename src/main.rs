@@ -91,9 +91,11 @@ async fn action_add(item: web::Json<EntryRequestDto>) -> HttpResponse {
         write_to_custom_file(parse_address_vector_into_address_string(custom_entries_original));
         // Restart again with old configuration file
         restart_dnsmasq();
-    }
 
-    HttpResponse::Ok().finish()
+        HttpResponse::BadRequest().finish()
+    } else {
+        HttpResponse::Ok().finish()
+    }
 }
 
 async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
@@ -129,9 +131,11 @@ async fn action_delete(item: web::Json<EntryRequestDto>) -> HttpResponse {
         write_to_custom_file(parse_address_vector_into_address_string(custom_entries_original));
         // Restart again with old configuration file
         restart_dnsmasq();
+        
+        HttpResponse::BadRequest().finish()
+    } else {
+        HttpResponse::Ok().finish()
     }
-
-    HttpResponse::Ok().finish()
 }
 
 fn initialize_files() {
